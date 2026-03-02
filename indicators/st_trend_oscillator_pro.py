@@ -13,6 +13,7 @@ def _get_preset(timeframe):
     """
     Map timeframe string to (htf_resample, L1, L2) per ThinkScript preset logic.
     Timeframe can be '5m', '5min', '1m', '15m', '1h', etc.
+    For 15m: 1h HTF, L1=50, L2=65 (ThinkScript presets).
     """
     tf = (str(timeframe) or "5m").strip().lower()
     if "5" in tf and "min" in tf or tf == "5m":
@@ -45,6 +46,8 @@ def compute_st_trend_oscillator_pro(
     trend_osc_seed=None,
     ema_seed=None,
     prev_30min_close_seed=None,
+    L1=None,
+    L2=None,
 ):
     """
     Compute ST_TrendOscillatorPRO_X (ThinkScript port).
@@ -56,17 +59,40 @@ def compute_st_trend_oscillator_pro(
     Optional seeds (trend_osc_seed, ema_seed) initialize the indicator from the previous
     session close for accuracy from bar 0. prev_30min_close_seed sets the first bar's
     prior close; if omitted, uses df["open"].iloc[0].
+    Optional L1, L2 override the preset from _get_preset (e.g. from config).
     """
     if "close" not in df.columns:
         raise ValueError("DataFrame must have 'close' column")
 
-    htf_resample, L1, L2 = _get_preset(timeframe)
+    htf_resample, preset_L1, preset_L2 = _get_preset(timeframe)
+    L1 = int(L1) if L1 is not None else preset_L1
+    L2 = int(L2) if L2 is not None else preset_L2
     use_seed = trend_osc_seed is not None and ema_seed is not None
     htf_prev_seed = None
 
-    # Resample to HTF: use completed bars only (no developing bar)
-    htf = df["close"].resample(htf_resample).last().dropna()
+    # Resample to HTF: session-aligned (first bin = first bar, e.g. 9:30-10:30 for 1h)
+    # so last 1h bar has only two 15m bars (15:30, 15:45). origin='start' aligns to first index.
+    if len(df) == 0:
+        htf = pd.Series(dtype=float)
+    else:
+        htf = df["close"].resample(htf_resample, origin="start").last().dropna()
     htf_prev = htf.shift(1)
+
+    if len(htf) == 0:
+        # No completed HTF bars (e.g. empty or single-bar df); leave HTF-derived columns NaN
+        for col in (
+            "st_trend_oscillator", "st_trend_ema", "st_trend_oscillator_sim", "st_trend_ema_sim",
+            "st_trend_bullish", "st_trend_bullish_cross", "st_trend_bearish_cross",
+            "st_trend_extreme", "st_trend_ema_extreme",
+        ):
+            df[col] = float("nan")
+        close = df["close"]
+        macd_line = close.ewm(span=21, adjust=False).mean() - close.ewm(span=55, adjust=False).mean()
+        signal_line = macd_line.ewm(span=55, adjust=False).mean()
+        macd_hist = macd_line - signal_line
+        df["st_trend_macd_hist"] = macd_hist.round(4)
+        df["st_trend_macd_bullish"] = macd_hist > 0
+        return df
 
     # Compute entirely on HTF series
     diff_htf = htf - htf_prev
@@ -144,6 +170,9 @@ def compute_st_trend_oscillator_pro(
     df["st_trend_ema"] = ema_osc.round(4)
     df["st_trend_oscillator_sim"] = TrendOscillator_sim.round(4)
     df["st_trend_ema_sim"] = ema_osc_sim.round(4)
+    # Forward-fill sim columns where close was NaN (e.g. placeholder bars) so no gaps in export
+    df["st_trend_oscillator_sim"] = df["st_trend_oscillator_sim"].ffill()
+    df["st_trend_ema_sim"] = df["st_trend_ema_sim"].ffill()
     df["st_trend_bullish"] = TrendOscillator > ema_osc
 
     # Cross signals: only at HTF bar boundaries (where new value appears)

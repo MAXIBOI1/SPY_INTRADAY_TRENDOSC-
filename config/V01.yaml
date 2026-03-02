@@ -17,6 +17,11 @@ data:
   local_path: data/spy_15min_session.parquet
   ticker: SPY
   timeframe: 15m
+  # Exclude pre-market and after-hours (keep 09:30–16:00 session only)
+  filter_regular_session: true
+  market_open_time: "09:30"
+  market_close_time: "16:00"
+  market_timezone: "America/New_York"
 
 strategy:
   name: spy_15min_trend
@@ -26,15 +31,24 @@ strategy:
   exit_class_name: ATRBandsExit
   allow_short: True
   params:
-    # Indicators (for future entry/exit or position sizing)
-    ema_periods: [8, 200]
+    # Indicators
+    ema_periods: [8, 50, 200]
+    # Base EMA used for touch condition (low/high vs EMA)
+    base_ema_period: 50
+    # Number of prior bars that must have touched the base EMA for a valid entry
+    ema_touch_lookback_bars: 8
     atr_period: 14
     atr_method: wilder
-    # Exit behavior (blank slate: session close / max_hold only)
+    # Exit behavior
     exit_at_session_close: true
     session_close_time: "15:55"
     allow_exit_on_entry_bar: True
     max_hold_bars: null
+    # Stop/target/breakeven parameters
+    exit_lookback_bars: 10        # stop = low/high of previous N bars
+    atr_multiplier_target: 3      # 3 ATR target
+    atr_multiplier_stop: 1        # kept for sizing fallback; level from lookback
+    atr_multiplier_breakeven: 1.5 # move stop to breakeven after 1.5 ATR in favor
     # Position sizing / PnL (backtester uses these when stop_level/target_level are nan)
     risk_pct_per_trade: 0.10
     risk_dollars_per_trade: 500
@@ -48,9 +62,15 @@ strategy:
     atr_bands_enabled: false
     st_trend_oscillator_enabled: true
     st_trend_oscillator_timeframe: "15m"
-    st_trend_oscillator_trend_osc_seed: 50
-    st_trend_oscillator_ema_seed: 50
-    st_trend_oscillator_prev_30min_close_seed: null
+    # ST Trend Oscillator entry filters
+    st_trend_oscillator_bars_above: 10          # previous N bars osc vs ema
+    st_trend_oscillator_sim_min_spread: 2.0     # min |osc_sim - ema_sim| to enter
+    # Optional overrides for L1/L2 (default 15m preset: L1=50, L2=65 per ThinkScript)
+    # st_trend_oscillator_L1: 50
+    # st_trend_oscillator_L2: 65
+    st_trend_oscillator_trend_osc_seed: 43.9538
+    st_trend_oscillator_ema_seed: 49.477
+    st_trend_oscillator_prev_30min_close_seed: 264.45
     htf_tmo_enabled: true
     htf_tmo_timeframe: "30min"
     htf_tmo_length: 14

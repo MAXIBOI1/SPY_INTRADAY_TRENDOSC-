@@ -61,6 +61,18 @@ def compute_all_indicators(df, config):
     if pullback_ema_period is not None:
         df = compute_ema(df, period=int(pullback_ema_period))
     
+    # Base EMA used for touch condition (e.g. ema_50)
+    base_ema_period = params.get("base_ema_period")
+    if base_ema_period is not None:
+        try:
+            base_ema_period_int = int(base_ema_period)
+        except (TypeError, ValueError):
+            base_ema_period_int = None
+        if base_ema_period_int is not None:
+            col_name = f"ema_{base_ema_period_int}"
+            if col_name not in df.columns:
+                df = compute_ema(df, period=base_ema_period_int)
+    
     # Compute ATR
     df = compute_atr(
         df,
@@ -141,6 +153,12 @@ def compute_all_indicators(df, config):
         }
         if prev_30min_close_seed is not None and isinstance(prev_30min_close_seed, (int, float)):
             kwargs["prev_30min_close_seed"] = float(prev_30min_close_seed)
+        L1 = params.get("st_trend_oscillator_L1")
+        L2 = params.get("st_trend_oscillator_L2")
+        if L1 is not None:
+            kwargs["L1"] = int(L1)
+        if L2 is not None:
+            kwargs["L2"] = int(L2)
         df = compute_st_trend_oscillator_pro(df, **kwargs)
         log.info("ST Trend Oscillator PRO applied (timeframe=%s)", timeframe)
 
@@ -304,12 +322,35 @@ def _calculate_trade_pnl(
 
 def _generate_entry_strategy_note(config):
     """Generate a human-readable description of the entry strategy from config."""
-    return "Stub (no entry signals)"
+    params = config.get("strategy", {}).get("params", {})
+    base_ema = params.get("base_ema_period", 50)
+    st_bars = params.get("st_trend_oscillator_bars_above", 10)
+    st_spread = params.get("st_trend_oscillator_sim_min_spread", 2.0)
+    return (
+        f"Entry when 15m low/high touches EMA_{base_ema} after first HiLoPRO arrow, "
+        f"with ST Trend Oscillator filters (osc vs ema for previous {st_bars} bars "
+        f"and sim spread ≥ {st_spread}). Inverse conditions for shorts."
+    )
 
 
 def _generate_exit_strategy_note(config):
     """Generate a human-readable description of the exit strategy from config."""
-    return "Blank slate (session close / max hold only)"
+    params = config.get("strategy", {}).get("params", {})
+    lookback = params.get("exit_lookback_bars", 10)
+    atr_target = params.get("atr_multiplier_target", 3)
+    atr_be = params.get("atr_multiplier_breakeven", 1.5)
+    session_close = params.get("exit_at_session_close", False)
+    max_hold_bars = params.get("max_hold_bars")
+    pieces = [
+        f"Stop at prior {lookback}-bar low/high",
+        f"target at {atr_target} ATR",
+        f"breakeven after {atr_be} ATR in favor",
+    ]
+    if session_close:
+        pieces.append("optional exit at session close")
+    if max_hold_bars:
+        pieces.append(f"max hold {max_hold_bars} bars")
+    return "; ".join(pieces)
 
 
 def _cfg_value(value):
@@ -459,6 +500,8 @@ def run_backtest(config_path=None, config=None, df=None, date_from=None, date_to
         atr_target_multiplier=params.get("atr_multiplier_target", 2.5),
         atr_stop_multiplier=params.get("atr_multiplier_stop", 1.5),
         breakeven_enabled=params.get("breakeven_enabled", True),
+        exit_lookback_bars=params.get("exit_lookback_bars", 10),
+        atr_multiplier_breakeven=params.get("atr_multiplier_breakeven", 1.5),
     )
     df = exit_logic.apply_exit(df, config=config)
 
