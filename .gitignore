@@ -1,0 +1,34 @@
+# Python virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Data files (large binaries - don't commit)
+*.parquet
+*.csv
+*.xlsx
+*.zip
+
+# Python caches and temp files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+
+# macOS junk
+.DS_Store
+
+# VS Code settings (optional)
+.vscode/
+
+# Cursor IDE files
+.cursor/
+
+# Test outputs and backtest results
+test_output/
+
+# Generated backtest / WFO outputs (regenerated on each run)
+output/

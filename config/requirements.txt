@@ -1,0 +1,6 @@
+pandas>=1.5.3
+pyarrow>=13.0.0
+pyyaml
+databento>=0.60.0
+matplotlib>=3.5.0
+optuna>=3.0.0

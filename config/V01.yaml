@@ -1,0 +1,113 @@
+# SPY 5-min HiLo + ATR Bands Strategy
+# Long: hilopro_slow_d >= 80, enter at atr_bands_lower. Short: hilopro_slow_d <= 20, enter at atr_bands_upper.
+
+project:
+  name: Trading Backtester
+  version: 0.1
+
+portfolio:
+  initial_capital: 10000
+
+costs:
+  commission_per_side: 0
+  slippage_bps: 5
+
+data:
+  source: local_parquet
+  local_path: data/spy_5min_session.parquet
+  ticker: SPY
+  timeframe: 5m
+
+strategy:
+  name: spy_5min_trend
+  strategy_module: strategyV02
+  class_name: HiLoATRBands
+  exit_module: atr_bands_exit  # default if not specified
+  exit_class_name: ATRBandsExit  # default if not specified
+  allow_short: True
+  params:
+    ema_periods: [8, 200]
+    atr_period: 14
+    atr_method: wilder
+    exit_at_session_close: true
+    session_close_time: "15:55"
+    max_trades_per_session: 2
+    allow_exit_on_entry_bar: True
+    indicator_warmup_bars: 200
+    entry_after_time: "10:00"
+    entry_before_time: "15:30"
+    risk_pct_per_trade: 0.10
+    risk_dollars_per_trade: 500
+    risk_cap_pct_of_capital: 1.0
+    dollar_pnl_mode: "options"
+    breakeven_tol: 0.01
+    max_hold_bars: null
+    hilopro_long_threshold: 80
+    hilopro_short_threshold: 20
+    close_agree_bars: 10   # bars to wait for confirming candle (close>open long, close<open short); void if none
+    # ATR Bands - required for HiLoATRBands
+    atr_bands_enabled: true
+    atr_bands_displace: 0
+    atr_bands_factor: 1.5
+    atr_bands_length: 8
+    atr_bands_price: close
+    atr_bands_average_type: exponential
+    atr_bands_true_range_average_type: wilder
+    stop_adjustment_factor: 1
+    # Exit: 3 ATR target, 1 ATR stop, no breakeven
+    exit_target_strategy: "atr"   # bands | atr | hybrid
+    atr_multiplier_target: 3      # target at 3 ATR from entry
+    atr_multiplier_stop: 1        # stop at 1 ATR from entry
+    breakeven_enabled: false
+    # Higher-timeframe TMO overlay (15min / 30min / 1h)
+    htf_tmo_enabled: true
+    htf_tmo_timeframe: "15min"   # 15min | 30min | 1h
+    htf_tmo_length: 14
+    htf_tmo_calc_length: 5
+    htf_tmo_smooth_length: 3
+
+# Walk-Forward Optimization configuration
+# Optimized for 8 years of data: ~28 periods with quarterly rolling windows
+wfo:
+  train_months: 12     # 1 year training - captures full market cycles, reduces overfitting
+  test_months: 3       # 3 months testing - statistically meaningful sample size
+  step_months: 3       # Roll forward quarterly - yields ~28 periods from 8 years
+  optimization:
+    n_trials: 50      # Increased trials - more data allows deeper exploration
+    objective: composite_score  # Options: sharpe_ratio, composite_score (configurable composite; default includes Calmar and trades_per_month)
+    min_trades_per_month: 10
+    max_trades_per_month: 25
+    max_drawdown_pct_cap: -25  # Reject trials with training-period max drawdown worse than 25% (tighter cap for better risk control)
+    min_win_rate_pct: 45  # Reject trials with win rate below 45% (force higher win rates)
+    # Simplified composite weights: removed redundant metrics (Sortino, Calmar, Reward:Risk, Profit Factor)
+    # Focused on 5 core metrics: expectancy (profitability), risk (drawdown), risk-adjusted returns (Sharpe), consistency (win rate), constraint (trades)
+    composite_weights:
+      expectancy: 0.25        # Core edge metric (increased - now sole profitability metric)
+      max_drawdown_pct: 0.18  # Critical risk (reduced - already capped at -25%)
+      sharpe_ratio: 0.20      # Risk-adjusted returns
+      win_rate_pct: 0.28      # Consistency factor - now 28% of objective (no dilution)
+      trades_per_month: 0.04  # Constraint metric (rebalanced with breakeven_exits_pct)
+      breakeven_exits_pct: 0.05  # Exit/breakeven mix (sweet spot 10-25% breakeven exits)
+    # Composite weights are now the sole optimization objective (no consistency blending)
+    consistency_subperiods: 6   # Split train window into N chunks (not used when consistency_weight: 0)
+    consistency_weight: 0.0    # Disabled - composite_weights now 100% of objective
+    consistency_mode: variance_penalty # maximin = maximize min chunk return; variance_penalty = penalize std(chunk returns)
+    param_stability_penalty_weight: 0.05  # Small weight for smoother, more stable param choices across periods (live behavior)
+    # min_test_trades: 5  # Optional: minimum trades required in test period. If not set, auto-scales from min_trades based on period length ratio
+  ranking:
+    stability_weight: 0.30  # Increased to favor stable parameters in ranking
+    consistency_top_n: 5     # Top N periods for consistency tracking
+  parameters:
+    # Numeric parameters (ranges: [min, max])
+    hilopro_long_threshold: [75, 85]
+    hilopro_short_threshold: [15, 25]
+    atr_bands_factor: [0.7, 1.5]
+    atr_bands_length: [7, 9]
+    max_trades_per_session: [1, 2]
+    stop_adjustment_factor: [0.5, 1.0]  # Tighter stops to reduce drawdowns
+    atr_multiplier_breakeven: [0.5, 2.5]
+    atr_multiplier_target: [1.5, 4.0]  # Only used when exit_target_strategy is "atr" or "hybrid"
+    # Categorical parameters (list of options)
+    entry_after_time: ["09:30", "09:45", "10:00", "10:15", "10:30", "11:00"]
+    entry_before_time: ["14:00", "14:30", "15:00", "15:15", "15:30"]
+    exit_target_strategy: ["bands", "atr", "hybrid"]
