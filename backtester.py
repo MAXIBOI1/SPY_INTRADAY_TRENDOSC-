@@ -292,50 +292,7 @@ def _generate_entry_strategy_note(config):
 
 def _generate_exit_strategy_note(config):
     """Generate a human-readable description of the exit strategy from config."""
-    params = config.get("strategy", {}).get("params", {})
-    
-    parts = []
-    
-    # ATR-based stops
-    stop_mult = params.get("atr_multiplier_stop", 1.5)
-    parts.append(f"ATR-based stops ({stop_mult}x ATR)")
-    
-    # Exit target strategy
-    exit_target_strategy = params.get("exit_target_strategy", "atr")
-    if exit_target_strategy == "bands":
-        parts.append("target at opposite band")
-    elif exit_target_strategy == "atr":
-        target_mult = params.get("atr_multiplier_target", 2.5)
-        parts.append(f"target at {target_mult}x ATR")
-    elif exit_target_strategy == "hybrid":
-        target_mult = params.get("atr_multiplier_target", 2.5)
-        parts.append(f"target at band or {target_mult}x ATR (whichever first)")
-    else:
-        # Fallback for unknown strategy
-        target_mult = params.get("atr_multiplier_target", 2.5)
-        parts.append(f"target at {target_mult}x ATR")
-    
-    # Breakeven trigger
-    breakeven_mult = params.get("atr_multiplier_breakeven")
-    if breakeven_mult:
-        parts.append(f"breakeven trigger at {breakeven_mult}x ATR")
-    
-    # Session close exits
-    if params.get("exit_at_session_close", False):
-        session_close_time = params.get("session_close_time", "15:55")
-        parts.append(f"session close at {session_close_time}")
-    
-    # Max hold bars
-    max_hold = params.get("max_hold_bars")
-    if max_hold:
-        parts.append(f"max hold {max_hold} bars")
-
-    # Same-bar exit control
-    allow_exit_on_entry = params.get("allow_exit_on_entry_bar", True)
-    if not allow_exit_on_entry:
-        parts.append("no same-bar exits")
-    
-    return " ".join(parts)
+    return "Blank slate (session close / max hold only)"
 
 
 def _cfg_value(value):

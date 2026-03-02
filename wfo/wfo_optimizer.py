@@ -16,23 +16,11 @@ from backtester import run_backtest
 
 log = logging.getLogger("wfo_optimizer")
 
-# Default parameter ranges (used if not specified in config)
-DEFAULT_RANGES = {
-    "hilopro_long_threshold": [70, 90],
-    "hilopro_short_threshold": [10, 30],
-    "atr_bands_factor": [0.5, 2.0],
-    "atr_bands_length": [5, 15],
-    "max_trades_per_session": [1, 3],
-    "stop_adjustment_factor": [0.25, 1.5],
-    "atr_multiplier_breakeven": [0.5, 2.5],
-}
+# Default parameter ranges (used if not specified in config). Blank slate: empty.
+DEFAULT_RANGES = {}
 
-# Default categorical parameter options (used if not specified in config)
-DEFAULT_CATEGORICAL = {
-    "entry_after_time": ["09:30", "09:45", "10:00", "10:15", "10:30", "11:00"],
-    "entry_before_time": ["14:00", "14:30", "15:00", "15:15", "15:30"],
-    "exit_target_strategy": ["bands", "atr", "hybrid"],
-}
+# Default categorical parameter options (used if not specified in config). Blank slate: empty.
+DEFAULT_CATEGORICAL = {}
 
 # Parameter types: "int" or "float"
 PARAMETER_TYPES = {
@@ -384,9 +372,8 @@ def optimize_period(
             else:
                 log.warning(f"No options available for categorical parameter {param_name}. Skipping.")
         
-        # ATR target multiplier (only used if exit_target_strategy is "atr" or "hybrid")
-        # Use range from config if available, otherwise use defaults
-        if params["exit_target_strategy"] in ["atr", "hybrid"]:
+        # ATR target multiplier (only when exit_target_strategy is "atr" or "hybrid" and we are optimizing it)
+        if params.get("exit_target_strategy") in ["atr", "hybrid"] and "atr_multiplier_target" in merged_ranges:
             atr_target_range = merged_ranges.get("atr_multiplier_target", [1.5, 4.0])
             if isinstance(atr_target_range, list) and len(atr_target_range) == 2:
                 min_target, max_target = float(atr_target_range[0]), float(atr_target_range[1])
