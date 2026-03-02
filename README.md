@@ -1,6 +1,6 @@
 # SPY_INTRADAY_TRENDOSC
 
-SPY 5-min backtester with ATR-based stop/target exits. Uses HiLoATRBands strategy: long entries when HiLoPRO slow %D >= threshold and price touches ATR bands lower; short entries when HiLoPRO slow %D <= threshold and price touches ATR bands upper. Indicators: EMA, ATR, ATR Bands (Charles Schwab style), HiLoPRO.
+SPY 15-min backtester with ATR-based stop/target exits. Uses HiLoATRBands strategy: long entries when HiLoPRO slow %D >= threshold and price touches ATR bands lower; short entries when HiLoPRO slow %D <= threshold and price touches ATR bands upper. Indicators: EMA, ATR, ATR Bands (Charles Schwab style), HiLoPRO.
 
 ## Setup
 
@@ -35,28 +35,21 @@ However, for full functionality including walk-forward optimization, use `config
 
 ## Data
 
-Put data at `data/spy_5min_session.parquet` (or set `data.local_path` in `config/V01.yaml`). Only `local_parquet` is supported.
+Put data at `data/spy_15min_session.parquet` (or set `data.local_path` in `config/V01.yaml`). Only `local_parquet` is supported.
 
-**Building session-only 5m from Databento 1m:** If you have a `resample_dbn_to_5min.py` script (not included in this repo), you can resample a DBN file to regular-session 5m Parquet:
+**Building session-only data from Databento 1m:** If you have a resample script (e.g. to 5m or 15m), you can resample a DBN file to regular-session Parquet. Then set `data.local_path` to the output path (e.g. `data/spy_15min_session.parquet`) in `config/V01.yaml`.
 
-```bash
-pip install databento   # or use config/requirements.txt
-python resample_dbn_to_5min.py [--input PATH] [--output PATH]
-```
-
-Then set `data.local_path` to the output path (e.g. `data/spy_5min_session.parquet`) in `config/V01.yaml`.
-
-**Resampling 5m to 15m, 30m, 1h:** From the project root, run (uses project venv; creates it if missing):
+**Resampling to higher timeframes (e.g. 30m, 1h for HTF overlay):** From the project root, run (uses project venv; creates it if missing):
 
 ```bash
 ./run_resample.sh
 # or with options:
-./run_resample.sh --input data/spy_5min_session.parquet --output-dir data
+./run_resample.sh --input data/spy_15min_session.parquet --output-dir data
 ```
 
 Or with venv already activated: `python3 -m data.resample_to_timeframes [--input PATH] [--output-dir DIR]`
 
-Defaults: input from `data.local_path` in `config/V01.yaml` (or `data/spy_5min_session.parquet`), output directory = same as input. Writes `{base}_15min.parquet`, `{base}_30min.parquet`, `{base}_1h.parquet`.
+Defaults: input from `data.local_path` in `config/V01.yaml` (or `data/spy_15min_session.parquet`), output directory = same as input. Writes `{base}_15min.parquet`, `{base}_30min.parquet`, `{base}_1h.parquet` (useful when base is 15m and you need 30min/1h for HTF TMO).
 
 Required parquet format:
 

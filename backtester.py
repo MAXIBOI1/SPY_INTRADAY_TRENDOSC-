@@ -1,4 +1,4 @@
-# spy_5min_trend/backtester.py
+# backtester.py
 """
 Execution model (explicit):
 - Entry is the bar where signal flips to non-zero. Entry price is set by the exit module
@@ -28,6 +28,7 @@ from indicators.atr import compute_atr
 from indicators.atr_bands import compute_atr_bands
 from indicators.hilopro import compute_hilopro
 from indicators.tmo import compute_tmo
+from indicators.st_trend_oscillator_pro import compute_st_trend_oscillator_pro
 
 log = logging.getLogger("backtest")
 
@@ -126,6 +127,22 @@ def compute_all_indicators(df, config):
                     htf_series = htf_df[col].reindex(df.index, method="ffill")
                     df[f"htf_tmo_{col.replace('tmo_', '', 1)}"] = htf_series
                 log.info("HTF TMO overlay applied (timeframe=%s)", timeframe)
+
+    # ST Trend Oscillator PRO (optional)
+    if params.get("st_trend_oscillator_enabled", False):
+        timeframe = params.get("st_trend_oscillator_timeframe", "15m")
+        trend_osc_seed = params.get("st_trend_oscillator_trend_osc_seed", 50)
+        ema_seed = params.get("st_trend_oscillator_ema_seed", 50)
+        prev_30min_close_seed = params.get("st_trend_oscillator_prev_30min_close_seed")
+        kwargs = {
+            "timeframe": timeframe,
+            "trend_osc_seed": float(trend_osc_seed) if isinstance(trend_osc_seed, (int, float)) else 50.0,
+            "ema_seed": float(ema_seed) if isinstance(ema_seed, (int, float)) else 50.0,
+        }
+        if prev_30min_close_seed is not None and isinstance(prev_30min_close_seed, (int, float)):
+            kwargs["prev_30min_close_seed"] = float(prev_30min_close_seed)
+        df = compute_st_trend_oscillator_pro(df, **kwargs)
+        log.info("ST Trend Oscillator PRO applied (timeframe=%s)", timeframe)
 
     return df
 
@@ -817,7 +834,7 @@ def run_backtest(config_path=None, config=None, df=None, date_from=None, date_to
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run SPY 5m BTD backtest")
+    parser = argparse.ArgumentParser(description="Run SPY 15m BTD backtest")
     parser.add_argument("--config", type=str, default=None, help="Path to config YAML (default: config/V01.yaml)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     args = parser.parse_args()

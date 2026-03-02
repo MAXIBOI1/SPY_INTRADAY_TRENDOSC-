@@ -1,4 +1,4 @@
-# SPY 5-min - Blank slate for entry/exit (conditions to be added)
+# SPY 15-min - Blank slate for entry/exit (conditions to be added)
 # Strategy and exit modules: no signals, exit only at session close or max_hold_bars.
 
 project:
@@ -14,12 +14,12 @@ costs:
 
 data:
   source: local_parquet
-  local_path: data/spy_5min_session.parquet
+  local_path: data/spy_15min_session.parquet
   ticker: SPY
-  timeframe: 5m
+  timeframe: 15m
 
 strategy:
-  name: spy_5min_trend
+  name: spy_15min_trend
   strategy_module: strategyV02
   class_name: HiLoATRBands
   exit_module: atr_bands_exit
@@ -46,8 +46,13 @@ strategy:
     atr_multiplier_stop: 1
     # Optional indicators for future use
     atr_bands_enabled: false
+    st_trend_oscillator_enabled: true
+    st_trend_oscillator_timeframe: "15m"
+    st_trend_oscillator_trend_osc_seed: 50
+    st_trend_oscillator_ema_seed: 50
+    st_trend_oscillator_prev_30min_close_seed: null
     htf_tmo_enabled: true
-    htf_tmo_timeframe: "15min"
+    htf_tmo_timeframe: "30min"
     htf_tmo_length: 14
     htf_tmo_calc_length: 5
     htf_tmo_smooth_length: 3

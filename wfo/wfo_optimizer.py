@@ -198,7 +198,7 @@ def calculate_simplified_composite_score(metrics, base_config):
     """
     row = dict(metrics)
     if "cfg_timeframe" not in row:
-        row["cfg_timeframe"] = base_config.get("data", {}).get("timeframe", "5m")
+        row["cfg_timeframe"] = base_config.get("data", {}).get("timeframe", "15m")
     if "initial_capital" not in row:
         row["initial_capital"] = base_config.get("portfolio", {}).get("initial_capital", 10000)
     

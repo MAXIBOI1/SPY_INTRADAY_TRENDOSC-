@@ -1,9 +1,9 @@
 # indicators/st_trend_oscillator_pro.py
 """
 ST_TrendOscillatorPRO_X - Simpler Trading Trend Oscillator (ThinkScript port).
-Uses higher timeframe close for momentum; for 5-min: 30-min HTF, L1=50, L2=75.
-Computed only on completed HTF bars (e.g. every 30 min), then forward-filled to
-5-min bars for analysis/export; no strategy logic changes. No look-ahead.
+Uses higher timeframe close for momentum; for 15-min: 1h HTF, L1=50, L2=65.
+Computed only on completed HTF bars, then forward-filled to
+base bars for analysis/export; no strategy logic changes. No look-ahead.
 """
 import numpy as np
 import pandas as pd
@@ -35,20 +35,20 @@ def _get_preset(timeframe):
         return "3d", 25, 40
     if "4h" in tf or "240" in tf:
         return "3d", 40, 80
-    # Default 5-min
+    # Default 15-min (or base timeframe)
     return "30min", 50, 75
 
 
 def compute_st_trend_oscillator_pro(
     df,
-    timeframe="5m",
+    timeframe="15m",
     trend_osc_seed=None,
     ema_seed=None,
     prev_30min_close_seed=None,
 ):
     """
     Compute ST_TrendOscillatorPRO_X (ThinkScript port).
-    Requires 'close'. Uses higher timeframe (e.g. 30-min for 5-min bars) for momentum.
+    Requires 'close'. Uses higher timeframe (e.g. 1h for 15-min bars) for momentum.
     Adds: st_trend_oscillator, st_trend_ema, st_trend_oscillator_sim, st_trend_ema_sim,
     st_trend_bullish, st_trend_bullish_cross, st_trend_bearish_cross,
     st_trend_macd_hist, st_trend_macd_bullish, st_trend_extreme, st_trend_ema_extreme.
@@ -111,12 +111,12 @@ def compute_st_trend_oscillator_pro(
     else:
         ema_osc_htf = TrendOscillator_htf.ewm(span=L2, adjust=False).mean()
 
-    # Map back to 5-min: ffill so each 5-min bar gets the most recent completed HTF value
+    # Map back to base bars: ffill so each bar gets the most recent completed HTF value
     TrendOscillator = TrendOscillator_htf.reindex(df.index).ffill()
     ema_osc = ema_osc_htf.reindex(df.index).ffill()
 
-    # Simulated values: use previous official A1, A2, EMA; plug in current 5-min close.
-    # Use shift(1) so at 30-min bars we blend new diff with prior state (not current).
+    # Simulated values: use previous official A1, A2, EMA; plug in current bar close.
+    # Use shift(1) so at HTF bar boundaries we blend new diff with prior state (not current).
     A1_5m = A1.shift(1).reindex(df.index).ffill()
     A2_5m = A2.shift(1).reindex(df.index).ffill()
     ema_osc_prev = ema_osc_htf.shift(1).reindex(df.index).ffill()

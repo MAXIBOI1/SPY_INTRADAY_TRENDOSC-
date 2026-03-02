@@ -110,8 +110,8 @@ def fetch_htf_data(config, timeframe, date_from=None, date_to=None, base_dir=Non
     Load higher-timeframe OHLCV data from pre-built session parquet.
 
     Path is derived from config['data']['local_path'] by replacing the
-    extension with _{timeframe}.parquet (e.g. data/spy_5min_session.parquet
-    -> data/spy_5min_session_15min.parquet). If base_dir is provided and
+    extension with _{timeframe}.parquet (e.g. data/spy_15min_session.parquet
+    -> data/spy_15min_session_30min.parquet). If base_dir is provided and
     local_path is not absolute, the path is resolved relative to base_dir.
 
     Parameters

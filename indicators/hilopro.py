@@ -1,6 +1,6 @@
 # indicators/hilopro.py
 """
-ST_HiLoPRO_X (SimplerTrading) for 5-min / intraday.
+ST_HiLoPRO_X (SimplerTrading) for intraday (e.g. 15-min).
 Computes HiLo stochastic (SlowK, SlowD) with intraday preset, thrust state from
 SlowD crosses vs OB/OS levels and OBBuy/OBSell/OSBuy/OSSell conditions.
 Adds: hilopro_slow_k, hilopro_slow_d, hilopro_thrust, indicator_bullish, hilopro_arrow (↑/↓ for CSV).
@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 
-# Intraday (5-min) preset from ST_HiLoPRO_X "else" branch
+# Intraday preset from ST_HiLoPRO_X "else" branch
 INTRADAY_A1 = 80
 INTRADAY_A2 = 20
 INTRADAY_P1 = 50  # K period
@@ -57,7 +57,7 @@ def compute_hilopro(
     over_sold: float = INTRADAY_A2,
 ) -> pd.DataFrame:
     """
-    Compute ST_HiLoPRO_X for intraday (5-min). Requires high, low, close.
+    Compute ST_HiLoPRO_X for intraday. Requires high, low, close.
     Adds: hilopro_slow_k, hilopro_slow_d, hilopro_thrust, indicator_bullish, hilopro_arrow (↑/↓ for CSV).
     indicator_bullish is True when thrust == 1 (bullish), for use by the strategy.
     """
