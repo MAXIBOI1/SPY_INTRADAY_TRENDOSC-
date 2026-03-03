@@ -1,17 +1,18 @@
 # strategy/strategyV02.py
 """
-EMA-touch + HiLoPRO + ST Trend Oscillator entry strategy.
+EMA-touch + TMO turn + ST Trend Oscillator entry strategy.
 
 Long:
 - Low of 15m bar touches Base EMA (ema_<base_ema_period>)
-- After first HiLoPRO up arrow
+- TMO turn from bearish to bullish (oscillator crosses above its EMA) on current bar;
+  only the first such turn since the last same-day EMA touch
 - ST Trend Oscillator filters:
   - st_trend_oscillator_sim > st_trend_ema_sim on current bar
   - st_trend_oscillator > st_trend_ema on each of the previous
     st_trend_oscillator_bars_above bars
   - st_trend_oscillator_sim - st_trend_ema_sim >= st_trend_oscillator_sim_min_spread
 
-Short: inverse conditions.
+Short: inverse conditions (TMO turn from bullish to bearish; first since touch).
 Entry is on the close of the 15m bar where conditions are satisfied.
 """
 
@@ -19,7 +20,7 @@ import pandas as pd
 
 
 class HiLoATRBands:
-    """EMA-touch + HiLoPRO + ST Trend Oscillator entry strategy."""
+    """EMA-touch + TMO turn + ST Trend Oscillator entry strategy."""
 
     def __init__(self, config=None):
         """
@@ -42,7 +43,7 @@ class HiLoATRBands:
         self.allow_short = bool(strategy_cfg.get("allow_short", True))
 
         print(
-            f"Strategy HiLoATRBands: EMA-touch/HiLoPRO/ST Trend entry "
+            f"Strategy HiLoATRBands: EMA-touch/TMO turn/ST Trend entry "
             f"(base_ema_period={self.base_ema_period}, "
             f"st_bars_above={self.st_bars_above}, "
             f"st_min_spread={self.st_min_spread}, "
@@ -54,7 +55,8 @@ class HiLoATRBands:
         """
         Generate long/short entry signals based on:
         - EMA touch (low/high vs ema_<base_ema_period>)
-        - After first HiLoPRO arrow (↑ for long, ↓ for short)
+        - TMO turn (long: oscillator crosses above EMA; short: crosses below EMA;
+          first turn since last same-day EMA touch only)
         - ST Trend Oscillator filters on current and previous bars.
         """
         if df is None or len(df) == 0:
@@ -68,7 +70,8 @@ class HiLoATRBands:
             "high",
             "close",
             ema_col,
-            "hilopro_arrow",
+            "tmo_main",
+            "tmo_signal",
             "st_trend_oscillator",
             "st_trend_ema",
             "st_trend_oscillator_sim",
@@ -87,10 +90,20 @@ class HiLoATRBands:
         warmup_bars = max(self.base_ema_period, self.st_bars_above, exit_lookback_bars, 1)
 
         ema = df[ema_col]
+        tmo_main = df["tmo_main"]
+        tmo_signal = df["tmo_signal"]
         osc = df["st_trend_oscillator"]
         osc_ema = df["st_trend_ema"]
         osc_sim = df["st_trend_oscillator_sim"]
         osc_ema_sim = df["st_trend_ema_sim"]
+
+        # TMO turn on base timeframe: main crosses above/below signal (replaces ST Trend sim for trigger)
+        tmo_bullish_turn = (
+            (tmo_main > tmo_signal) & (tmo_main.shift(1) <= tmo_signal.shift(1))
+        ).fillna(False).astype(bool)
+        tmo_bearish_turn = (
+            (tmo_main < tmo_signal) & (tmo_main.shift(1) >= tmo_signal.shift(1))
+        ).fillna(False).astype(bool)
 
         # EMA touch on individual bars
         ema_touch_long = df["low"] <= ema
@@ -125,7 +138,7 @@ class HiLoATRBands:
 
         dates = pd.to_datetime(df.index).normalize()
 
-        # Last same-day bar where EMA touch occurred (for "first arrow since touch")
+        # Last same-day bar where EMA touch occurred (for "first TMO turn since touch")
         def _last_touch_in_day(touch_series: pd.Series) -> pd.Series:
             last = None
             out = {}
@@ -142,41 +155,40 @@ class HiLoATRBands:
             ema_touch_short.groupby(dates).apply(_last_touch_in_day).reset_index(level=0, drop=True)
         )
 
-        # HiLoPRO arrow on entry bar: longs only on ↑, shorts only on ↓
-        arrow = df["hilopro_arrow"].fillna("")
-        arrow_long_ok = arrow.eq("↑")
-        arrow_short_ok = arrow.eq("↓")
-
-        # First arrow of that direction since the last same-day EMA touch
-        def _first_arrow_since_touch_day(
+        # First TMO turn of that direction since the last same-day EMA touch
+        def _first_turn_since_touch_day(
             day_index: pd.Index,
             last_touch_series: pd.Series,
-            arrow_ok_series: pd.Series,
+            turn_ok_series: pd.Series,
         ) -> pd.Series:
-            first_arrow = pd.Series(False, index=day_index)
+            first_turn = pd.Series(False, index=day_index)
             for idx in day_index:
                 last_touch = last_touch_series.loc[idx]
                 if last_touch is None or (isinstance(last_touch, float) and pd.isna(last_touch)):
                     continue
                 mask_between = (day_index > last_touch) & (day_index < idx)
-                if mask_between.any() and arrow_ok_series.loc[day_index[mask_between]].any():
+                if mask_between.any() and turn_ok_series.loc[day_index[mask_between]].any():
                     continue
-                if arrow_ok_series.loc[idx]:
-                    first_arrow.loc[idx] = True
-            return first_arrow
+                if turn_ok_series.loc[idx]:
+                    first_turn.loc[idx] = True
+            return first_turn
 
-        first_long_arrow = (
+        first_tmo_bullish_turn = (
             ema_touch_long.groupby(dates)
             .apply(
-                lambda g: _first_arrow_since_touch_day(g.index, last_touch_bar_long, arrow_long_ok)
+                lambda g: _first_turn_since_touch_day(
+                    g.index, last_touch_bar_long, tmo_bullish_turn
+                )
             )
             .reset_index(level=0, drop=True)
             .astype(bool)
         )
-        first_short_arrow = (
+        first_tmo_bearish_turn = (
             ema_touch_short.groupby(dates)
             .apply(
-                lambda g: _first_arrow_since_touch_day(g.index, last_touch_bar_short, arrow_short_ok)
+                lambda g: _first_turn_since_touch_day(
+                    g.index, last_touch_bar_short, tmo_bearish_turn
+                )
             )
             .reset_index(level=0, drop=True)
             .astype(bool)
@@ -207,14 +219,14 @@ class HiLoATRBands:
         # Combine conditions
         long_cond = (
             touched_long_recent
-            & (arrow_long_ok & first_long_arrow)
+            & (tmo_bullish_turn & first_tmo_bullish_turn)
             & current_long_st
             & long_hist_ok
             & spread_long
         )
         short_cond = (
             touched_short_recent
-            & (arrow_short_ok & first_short_arrow)
+            & (tmo_bearish_turn & first_tmo_bearish_turn)
             & current_short_st
             & short_hist_ok
             & spread_short

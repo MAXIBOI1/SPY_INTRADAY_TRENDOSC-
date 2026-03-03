@@ -97,6 +97,14 @@ def compute_all_indicators(df, config):
     # Compute HiLoPRO
     df = compute_hilopro(df)
 
+    # Base-timeframe TMO (for entry trigger in HiLoATRBands)
+    df = compute_tmo(
+        df,
+        length=params.get("tmo_length", 14),
+        calc_length=params.get("tmo_calc_length", 5),
+        smooth_length=params.get("tmo_smooth_length", 3),
+    )
+
     # Higher-timeframe TMO overlay (optional)
     if params.get("htf_tmo_enabled", False):
         timeframe = params.get("htf_tmo_timeframe", "15min")
