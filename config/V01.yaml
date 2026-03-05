@@ -1,4 +1,4 @@
-# SPY 15-min - Blank slate for entry/exit (conditions to be added)
+# SPY 5-min - Blank slate for entry/exit (conditions to be added)
 # Strategy and exit modules: no signals, exit only at session close or max_hold_bars.
 
 project:
@@ -14,9 +14,9 @@ costs:
 
 data:
   source: local_parquet
-  local_path: data/spy_15min_session.parquet
+  local_path: data/spy_5min_session.parquet
   ticker: SPY
-  timeframe: 15m
+  timeframe: 5m
   # Exclude pre-market and after-hours (keep 09:30–16:00 session only)
   filter_regular_session: true
   market_open_time: "09:30"
@@ -24,7 +24,7 @@ data:
   market_timezone: "America/New_York"
 
 strategy:
-  name: spy_15min_trend
+  name: spy_5min_trend
   strategy_module: strategyV02
   class_name: HiLoATRBands
   exit_module: atr_bands_exit
@@ -41,14 +41,21 @@ strategy:
     atr_method: wilder
     # Exit behavior
     exit_at_session_close: true
-    session_close_time: "15:55"
+    session_close_time: "15:45"
+    # Entry time window: no new trades before/after these times (HH:MM or HH:MM:SS). Omit or null = no restriction.
+    no_entries_before: "10:00"
+    no_entries_after: "15:00"
     allow_exit_on_entry_bar: True
     max_hold_bars: null
     # Stop/target/breakeven parameters
     exit_lookback_bars: 10        # stop = low/high of previous N bars
-    atr_multiplier_target: 3      # 3 ATR target
+    atr_multiplier_target: 2      # 2 ATR target
     atr_multiplier_stop: 1        # kept for sizing fallback; level from lookback
     atr_multiplier_breakeven: 1.5 # move stop to breakeven after 1.5 ATR in favor
+    # Pullback entry parameters
+    pullback_entry_enabled: true
+    atr_pullback_mult: 1.0        # enter within X ATR of LOD/HOD from signal bar
+    pullback_max_bars: 5        # void trade if pullback zone not hit within N bars
     # Position sizing / PnL (backtester uses these when stop_level/target_level are nan)
     risk_pct_per_trade: 0.10
     risk_dollars_per_trade: 500
@@ -56,12 +63,10 @@ strategy:
     dollar_pnl_mode: "options"
     breakeven_tol: 0.01
     exit_target_strategy: "atr"
-    atr_multiplier_target: 3
-    atr_multiplier_stop: 1
     # Optional indicators for future use
     atr_bands_enabled: false
     st_trend_oscillator_enabled: true
-    st_trend_oscillator_timeframe: "15m"
+    st_trend_oscillator_timeframe: "5m"
     # ST Trend Oscillator entry filters
     st_trend_oscillator_bars_above: 10          # previous N bars osc vs ema
     st_trend_oscillator_sim_min_spread: 2.0     # min |osc_sim - ema_sim| to enter

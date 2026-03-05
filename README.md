@@ -1,6 +1,6 @@
 # SPY_INTRADAY_TRENDOSC
 
-SPY 15-min backtester with ATR-based stop/target exits. Uses HiLoATRBands strategy: long entries when HiLoPRO slow %D >= threshold and price touches ATR bands lower; short entries when HiLoPRO slow %D <= threshold and price touches ATR bands upper. Indicators: EMA, ATR, ATR Bands (Charles Schwab style), HiLoPRO.
+SPY 5-min backtester with ATR-based stop/target exits. Uses HiLoATRBands strategy: long entries when HiLoPRO slow %D >= threshold and price touches ATR bands lower; short entries when HiLoPRO slow %D <= threshold and price touches ATR bands upper. Indicators: EMA, ATR, ATR Bands (Charles Schwab style), HiLoPRO.
 
 ## Setup
 
@@ -18,10 +18,12 @@ pip install -r config/requirements.txt
 After setup, verify everything is installed correctly:
 
 ```bash
-source venv/bin/activate  # Activate venv
+source venv/bin/activate  # Activate venv (or source .venv/bin/activate if you use .venv)
 pip check                  # Check for dependency conflicts
 python -c "import pandas, optuna, yaml, matplotlib; print('All imports OK')"
 ```
+
+If you see `ModuleNotFoundError: No module named 'pandas'` even with the venv active, either the shell is still using system Python (run `which python3` to check), or dependencies were not installed in this venv. Use the venv's interpreter explicitly: `venv/bin/python3 backtester.py` (or `.venv/bin/python3` if you use `.venv`), or run `pip install -r config/requirements.txt` in the activated venv.
 
 ### Minimal Dependencies
 
@@ -35,21 +37,21 @@ However, for full functionality including walk-forward optimization, use `config
 
 ## Data
 
-Put data at `data/spy_15min_session.parquet` (or set `data.local_path` in `config/V01.yaml`). Only `local_parquet` is supported.
+Put data at `data/spy_5min_session.parquet` (or set `data.local_path` in `config/V01.yaml`). Only `local_parquet` is supported.
 
-**Building session-only data from Databento 1m:** If you have a resample script (e.g. to 5m or 15m), you can resample a DBN file to regular-session Parquet. Then set `data.local_path` to the output path (e.g. `data/spy_15min_session.parquet`) in `config/V01.yaml`.
+**Building session-only data from Databento 1m:** If you have a resample script (e.g. to 5m or 15m), you can resample a DBN file to regular-session Parquet. Then set `data.local_path` to the output path (e.g. `data/spy_5min_session.parquet`) in `config/V01.yaml`.
 
-**Resampling to higher timeframes (e.g. 30m, 1h for HTF overlay):** From the project root, run (uses project venv; creates it if missing):
+**Resampling to higher timeframes (e.g. 15m, 30m, 1h for HTF overlay):** From the project root, run (uses project venv; creates it if missing):
 
 ```bash
 ./run_resample.sh
 # or with options:
-./run_resample.sh --input data/spy_15min_session.parquet --output-dir data
+./run_resample.sh --input data/spy_5min_session.parquet --output-dir data
 ```
 
 Or with venv already activated: `python3 -m data.resample_to_timeframes [--input PATH] [--output-dir DIR]`
 
-Defaults: input from `data.local_path` in `config/V01.yaml` (or `data/spy_15min_session.parquet`), output directory = same as input. Writes `{base}_15min.parquet`, `{base}_30min.parquet`, `{base}_1h.parquet` (useful when base is 15m and you need 30min/1h for HTF TMO).
+Defaults: input from `data.local_path` in `config/V01.yaml` (or `data/spy_5min_session.parquet`), output directory = same as input. Writes `{base}_15min.parquet`, `{base}_30min.parquet`, `{base}_1h.parquet` (useful when base is 5m and you need 15min/30min/1h for HTF TMO).
 
 Required parquet format:
 
@@ -74,6 +76,10 @@ Session-close time is compared to the **index time as-is**. If your data index i
 Each exit is tagged with **`exit_reason`**: `stop`, `target`, `session_close`, or `max_hold`. Metrics include counts and percentage by reason.
 
 - **`max_trades_per_session`** (int or null, default null): Max completed trades per calendar day. Use `1` for at most one trade per day; omit or `null` for no cap.
+
+- **`no_entries_before`** (str or null): No new trades may be entered before this time. Use `HH:MM` or `HH:MM:SS` in the same timezone as the bar index. Omit or `null` for no restriction.
+
+- **`no_entries_after`** (str or null): No new trades may be entered after this time. Use `HH:MM` or `HH:MM:SS`. Omit or `null` for no restriction.
 
 - **`allow_exit_on_entry_bar`** (bool, default `true`): If `false`, stop/target (and breakeven) are not evaluated on the entry bar (avoids same-bar stop-outs); session_close can still apply on the entry bar.
 

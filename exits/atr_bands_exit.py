@@ -1,15 +1,24 @@
 # exits/atr_bands_exit.py
 """
-ATR-based exit with lookback stop, 3 ATR target, and 1.5 ATR breakeven.
+ATR-based exit with lookback stop, ATR target, breakeven, and optional
+pullback-to-LOD/HOD entry logic.
 
-Entry gate is signal != 0. On entry:
-- Long: stop = min(low) of previous exit_lookback_bars bars
-- Short: stop = max(high) of previous exit_lookback_bars bars
+Default entry gate is signal != 0 with entry at the close of the signal bar.
+When pullback entry is enabled, a non-zero signal starts a pending setup and
+the actual entry occurs only if price pulls back to within a configurable
+ATR distance of the session low (for longs) or session high (for shorts)
+within a configurable number of bars. Pending setups are voided at end of
+day: if the pullback zone is not hit on the same calendar day as the signal,
+the trade is not taken (no carry-over overnight).
+
+On entry:
+- Long: stop = low of day so far (session LOD through entry bar)
+- Short: stop = high of day so far (session HOD through entry bar)
 - Target: entry_price ± atr_target_multiplier * ATR (up for long, down for short)
 
 While in trade:
-- If price reaches breakeven threshold (1.5 ATR in favor), effective stop is moved
-  to entry_price.
+- If price reaches breakeven threshold (atr_multiplier_breakeven * ATR in favor),
+  effective stop is moved to entry_price.
 - Each bar checks stop first, then target. If neither hit, optional exit at
   session close or max_hold_bars.
 
@@ -43,6 +52,13 @@ def _parse_session_close_time(s):
     return datetime.time(h, m, sec)
 
 
+def _parse_optional_time(s):
+    """Parse 'HH:MM' or 'HH:MM:SS' into datetime.time. Returns None if s is None or empty."""
+    if s is None or (isinstance(s, str) and not s.strip()):
+        return None
+    return _parse_session_close_time(s)
+
+
 class ATRBandsExit:
     """ATR-based exit with lookback stop, ATR target, and breakeven."""
 
@@ -51,6 +67,8 @@ class ATRBandsExit:
         exit_at_session_close=False,
         session_close_time="15:55",
         max_trades_per_session=None,
+        no_entries_before=None,
+        no_entries_after=None,
         allow_exit_on_entry_bar=True,
         max_hold_bars=None,
         stop_adjustment_factor=1.0,
@@ -60,10 +78,15 @@ class ATRBandsExit:
         breakeven_enabled=True,
         exit_lookback_bars=10,
         atr_multiplier_breakeven=1.5,
+        pullback_entry_enabled=False,
+        atr_pullback_mult=1.0,
+        pullback_max_bars=10,
     ):
         self.exit_at_session_close = exit_at_session_close
         self._session_close_time = _parse_session_close_time(session_close_time)
         self.max_trades_per_session = max_trades_per_session
+        self._no_entries_before = _parse_optional_time(no_entries_before)
+        self._no_entries_after = _parse_optional_time(no_entries_after)
         self.allow_exit_on_entry_bar = allow_exit_on_entry_bar
         n = max_hold_bars
         self.max_hold_bars = int(n) if n is not None and int(n) > 0 else None
@@ -75,6 +98,10 @@ class ATRBandsExit:
         self.breakeven_enabled = bool(breakeven_enabled)
         self.exit_lookback_bars = int(exit_lookback_bars) if int(exit_lookback_bars) > 0 else 10
         self.atr_multiplier_breakeven = float(atr_multiplier_breakeven)
+        self.pullback_entry_enabled = bool(pullback_entry_enabled)
+        self.atr_pullback_mult = float(atr_pullback_mult)
+        n_pb = int(pullback_max_bars) if pullback_max_bars is not None else 0
+        self.pullback_max_bars = n_pb if n_pb > 0 else 0
 
     def apply_exit(self, df, config=None):
         """
@@ -107,6 +134,19 @@ class ATRBandsExit:
         trade_stop_level = float("nan")
         trade_target_level = float("nan")
         breakeven_reached = False
+
+        # Pending pullback entry state (used when pullback_entry_enabled is True)
+        pending_entry = False
+        pending_direction = 0
+        pending_signal_i = 0
+        pending_signal_date = None  # same-day expiry: void if bar date != this
+        pending_entry_zone = float("nan")
+        pending_expire_i = 0
+
+        # Pre-compute same-day low/high so far for pullback zones
+        dates = pd.to_datetime(df.index).normalize()
+        daily_low_so_far = df["low"].groupby(dates).cummin()
+        daily_high_so_far = df["high"].groupby(dates).cummax()
 
         for i in range(1, len(df)):
             bar_date = _bar_date(df.index[i])
@@ -179,34 +219,122 @@ class ATRBandsExit:
                     df.at[df.index[i], "target_level"] = trade_target_level
                     in_trade = 0
 
-            # 2) Else: check for new signal (blank slate: any non-zero signal)
+            # 2) Else: handle pending pullback entry (if any), then check for new signal
             else:
+                # 2a) If we have a pending pullback entry, check for fill or expiry
+                if self.pullback_entry_enabled and pending_entry and self.pullback_max_bars > 0:
+                    # Void pending setup if we've moved to a new day (no overnight carry)
+                    if pending_signal_date is not None and bar_date != pending_signal_date:
+                        pending_entry = False
+                        pending_direction = 0
+                        pending_signal_i = 0
+                        pending_signal_date = None
+                        pending_entry_zone = float("nan")
+                        pending_expire_i = 0
+                    else:
+                        bar_low = float(df["low"].iloc[i])
+                        bar_high = float(df["high"].iloc[i])
+
+                        hit_zone = False
+                        if pending_direction == 1 and bar_low <= pending_entry_zone:
+                            hit_zone = True
+                        elif pending_direction == -1 and bar_high >= pending_entry_zone:
+                            hit_zone = True
+
+                        if hit_zone:
+                            # Enter at the configured pullback level
+                            entry_price = float(pending_entry_zone)
+                            atr_at_entry = float(df["atr"].iloc[i])
+                            if math.isfinite(atr_at_entry) and atr_at_entry > 0 and i > self.exit_lookback_bars:
+                                direction = pending_direction
+                                in_trade = 1
+                                entry_i = i
+                                breakeven_reached = False
+
+                                if direction == 1:
+                                    trade_stop_level = float(daily_low_so_far.iloc[i])
+                                    trade_target_level = entry_price + self.atr_target_multiplier * atr_at_entry
+                                else:
+                                    trade_stop_level = float(daily_high_so_far.iloc[i])
+                                    trade_target_level = entry_price - self.atr_target_multiplier * atr_at_entry
+
+                                df.at[df.index[i], "position"] = direction
+                                df.at[df.index[i], "entry_price"] = entry_price
+
+                            # Clear pending state whether or not we could actually enter
+                            pending_entry = False
+                            pending_direction = 0
+                            pending_signal_i = 0
+                            pending_signal_date = None
+                            pending_entry_zone = float("nan")
+                            pending_expire_i = 0
+
+                            # Once we attempt to enter on this bar, skip processing new signals
+                            continue
+
+                        # If we have exceeded the max bars since signal, void the pending setup
+                        if i - pending_signal_i >= self.pullback_max_bars:
+                            pending_entry = False
+                            pending_direction = 0
+                            pending_signal_i = 0
+                            pending_signal_date = None
+                            pending_entry_zone = float("nan")
+                            pending_expire_i = 0
+
+                # 2b) Check for new signal (may start a new trade or pending setup)
                 can_enter = signal_i != 0
+                # Entry time window: no entries before/after configured times
+                if can_enter and bar_time is not None:
+                    if self._no_entries_before is not None and bar_time < self._no_entries_before:
+                        can_enter = False
+                    if can_enter and self._no_entries_after is not None and bar_time > self._no_entries_after:
+                        can_enter = False
 
                 if can_enter:
-                    entry_price = float(df["close"].iloc[i])
-                    atr_at_entry = float(df["atr"].iloc[i])
-                    # Require a valid ATR and enough history for stop lookback
-                    if not (math.isfinite(atr_at_entry) and atr_at_entry > 0):
-                        continue
-                    if i <= self.exit_lookback_bars:
-                        continue
+                    # If pullback entry is enabled, start a pending setup around LOD/HOD
+                    if self.pullback_entry_enabled and self.pullback_max_bars > 0:
+                        atr_sig = float(df["atr"].iloc[i])
+                        if not (math.isfinite(atr_sig) and atr_sig > 0):
+                            continue
 
-                    direction = 1 if signal_i == 1 else -1
-                    in_trade = 1
-                    entry_i = i
-                    breakeven_reached = False
+                        direction_sig = 1 if signal_i == 1 else -1
+                        low_of_day_sig = float(daily_low_so_far.iloc[i])
+                        high_of_day_sig = float(daily_high_so_far.iloc[i])
 
-                    # Compute stop from previous N bars
-                    start = i - self.exit_lookback_bars
-                    if direction == 1:
-                        trade_stop_level = float(df["low"].iloc[start:i].min())
-                        trade_target_level = entry_price + self.atr_target_multiplier * atr_at_entry
+                        if direction_sig == 1:
+                            pending_entry_zone = low_of_day_sig + self.atr_pullback_mult * atr_sig
+                        else:
+                            pending_entry_zone = high_of_day_sig - self.atr_pullback_mult * atr_sig
+
+                        pending_entry = True
+                        pending_direction = direction_sig
+                        pending_signal_i = i
+                        pending_signal_date = bar_date
+                        pending_expire_i = i + self.pullback_max_bars
                     else:
-                        trade_stop_level = float(df["high"].iloc[start:i].max())
-                        trade_target_level = entry_price - self.atr_target_multiplier * atr_at_entry
+                        # Default behavior: enter at the close of the signal bar
+                        entry_price = float(df["close"].iloc[i])
+                        atr_at_entry = float(df["atr"].iloc[i])
+                        # Require a valid ATR and enough history for stop lookback
+                        if not (math.isfinite(atr_at_entry) and atr_at_entry > 0):
+                            continue
+                        if i <= self.exit_lookback_bars:
+                            continue
 
-                    df.at[df.index[i], "position"] = direction
-                    df.at[df.index[i], "entry_price"] = entry_price
+                        direction = 1 if signal_i == 1 else -1
+                        in_trade = 1
+                        entry_i = i
+                        breakeven_reached = False
+
+                        # Stop = low of day so far (longs) or high of day so far (shorts)
+                        if direction == 1:
+                            trade_stop_level = float(daily_low_so_far.iloc[i])
+                            trade_target_level = entry_price + self.atr_target_multiplier * atr_at_entry
+                        else:
+                            trade_stop_level = float(daily_high_so_far.iloc[i])
+                            trade_target_level = entry_price - self.atr_target_multiplier * atr_at_entry
+
+                        df.at[df.index[i], "position"] = direction
+                        df.at[df.index[i], "entry_price"] = entry_price
 
         return df

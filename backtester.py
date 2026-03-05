@@ -358,6 +358,15 @@ def _generate_exit_strategy_note(config):
         pieces.append("optional exit at session close")
     if max_hold_bars:
         pieces.append(f"max hold {max_hold_bars} bars")
+    no_before = params.get("no_entries_before")
+    no_after = params.get("no_entries_after")
+    if no_before or no_after:
+        window = "entries "
+        if no_before:
+            window += f"from {no_before}"
+        if no_after:
+            window += f" until {no_after}" if no_before else f"until {no_after}"
+        pieces.append(window)
     return "; ".join(pieces)
 
 
@@ -501,6 +510,8 @@ def run_backtest(config_path=None, config=None, df=None, date_from=None, date_to
         exit_at_session_close=params.get("exit_at_session_close", False),
         session_close_time=params.get("session_close_time", "15:55"),
         max_trades_per_session=params.get("max_trades_per_session"),
+        no_entries_before=params.get("no_entries_before"),
+        no_entries_after=params.get("no_entries_after"),
         allow_exit_on_entry_bar=params.get("allow_exit_on_entry_bar", True),
         max_hold_bars=params.get("max_hold_bars"),
         stop_adjustment_factor=params.get("stop_adjustment_factor", 1.0),
@@ -510,6 +521,9 @@ def run_backtest(config_path=None, config=None, df=None, date_from=None, date_to
         breakeven_enabled=params.get("breakeven_enabled", True),
         exit_lookback_bars=params.get("exit_lookback_bars", 10),
         atr_multiplier_breakeven=params.get("atr_multiplier_breakeven", 1.5),
+        pullback_entry_enabled=params.get("pullback_entry_enabled", False),
+        atr_pullback_mult=params.get("atr_pullback_mult", 1.0),
+        pullback_max_bars=params.get("pullback_max_bars", 10),
     )
     df = exit_logic.apply_exit(df, config=config)
 
